@@ -8,6 +8,8 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.WindowsAzure.Storage.Blob;
 using Microsoft.Azure.ServiceBus;
+using Newtonsoft.Json;
+using System.Text;
 
 namespace Contoso
 {
@@ -15,25 +17,28 @@ namespace Contoso
     {
         [FunctionName("AsyncProcessingWorkAcceptor")]
         public static async Task<IActionResult> Run(
-            [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = null)] HttpRequest req,
+            [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = null)] CustomerPOCO customer,
             [Blob("data", FileAccess.Read, Connection = "StorageConnectionAppSetting")] CloudBlobContainer inputBlob,
             [ServiceBus("outqueue", Connection = "ServiceBusConnectionAppSetting")] IAsyncCollector<Message> OutMessage,
             ILogger log)
         {
+            if (String.IsNullOrEmpty(customer.id) || String.IsNullOrEmpty(customer.customername))
+            {
+                return new BadRequestResult();
+            }
+
             string reqid = Guid.NewGuid().ToString();
             
-            string rqs = $"https://{Environment.GetEnvironmentVariable("WEBSITE_HOSTNAME")}/api/RequestStatus/{reqid}";
+            string rqs = $"http://{Environment.GetEnvironmentVariable("WEBSITE_HOSTNAME")}/api/RequestStatus/{reqid}";
 
-            using (var ms = new MemoryStream()) {
-                await req.Body.CopyToAsync(ms);
-
-                Message m = new Message(ms.ToArray());
-                m.UserProperties["RequestGUID"] = reqid;
-                m.UserProperties["RequestSubmittedAt"] = DateTime.Now;
-                m.UserProperties["RequestStatusURL"] = rqs;
+            var messagePayload = JsonConvert.SerializeObject(customer);
+            Message m = new Message(Encoding.UTF8.GetBytes(messagePayload));
+            m.UserProperties["RequestGUID"] = reqid;
+            m.UserProperties["RequestSubmittedAt"] = DateTime.Now;
+            m.UserProperties["RequestStatusURL"] = rqs;
                 
-                await OutMessage.AddAsync(m);  
-            }
+            await OutMessage.AddAsync(m);  
+
             CloudBlockBlob cbb = inputBlob.GetBlockBlobReference($"{reqid}.blobdata");
             return (ActionResult) new AcceptedResult(rqs, $"Request Accepted for Processing{Environment.NewLine}ValetKey: {GenerateSASURIForBlob(cbb)}{Environment.NewLine}ProxyStatus: {rqs}");  
         }
@@ -50,14 +55,6 @@ namespace Contoso
 
             //Return the URI string for the container, including the SAS token.
             return blob.Uri + sasBlobToken;
-        }
-        
-    }
-
-    // To get to the original object, deserialize it with the correct class
-    public class CustomerPOCO
-    {
-        public string id;
-        public string customername;
+        }        
     }
 }

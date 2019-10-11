@@ -61,7 +61,7 @@ namespace Contoso
                 // Default (OnPending not present or set to "Accepted") is to return a 202 accepted with the location and Retry-After Header set to 5 seconds from now.
                 // If OnPending is present and set to "Synchronous" then loop and keep retrying via an exponential backoff in the function until we time out.
 
-                string rqs = $"https://{Environment.GetEnvironmentVariable("WEBSITE_HOSTNAME")}/api/RequestStatus/{thisGUID}";
+                string rqs = $"http://{Environment.GetEnvironmentVariable("WEBSITE_HOSTNAME")}/api/RequestStatus/{thisGUID}";
 
                 log.LogInformation($"Blob {thisGUID}.blob does not exist, still working ! result will be at {rqs}");
 
