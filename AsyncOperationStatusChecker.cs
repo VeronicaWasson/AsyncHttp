@@ -39,7 +39,7 @@ namespace Contoso
                     case OnCompleteEnum.Redirect:
                         {
                             // Awesome, let's use the valet key pattern to offload the download via a SAS URI to blob storage
-                            return (ActionResult)new RedirectResult(GenerateSASURIForBlob(inputBlob));
+                            return (ActionResult)new RedirectResult(inputBlob.GenerateSASURI());
                         }
 
                     case OnCompleteEnum.Stream:
@@ -96,7 +96,7 @@ namespace Contoso
                                         {
                                             log.LogInformation($"Synchronous Redirect mode {thisGUID}.blob - completed after {backoff} ms");
                                             // Awesome, let's use the valet key pattern to offload the download via a SAS URI to blob storage
-                                            return (ActionResult)new RedirectResult(GenerateSASURIForBlob(inputBlob));
+                                            return (ActionResult)new RedirectResult(inputBlob.GenerateSASURI());
                                         }
 
                                     case OnCompleteEnum.Stream:
@@ -129,23 +129,6 @@ namespace Contoso
                 }
             }
         }
-    
-        public static string GenerateSASURIForBlob(CloudBlockBlob blob)
-        {
-
-            SharedAccessBlobPolicy sasConstraints = new SharedAccessBlobPolicy();
-            sasConstraints.SharedAccessStartTime = DateTimeOffset.UtcNow.AddMinutes(-5);
-            sasConstraints.SharedAccessExpiryTime = DateTimeOffset.UtcNow.AddMinutes(10);
-            sasConstraints.Permissions = SharedAccessBlobPermissions.Read;
-
-            //Generate the shared access signature on the blob, setting the constraints directly on the signature.
-            string sasBlobToken = blob.GetSharedAccessSignature(sasConstraints);
-
-            //Return the URI string for the container, including the SAS token.
-            return blob.Uri + sasBlobToken;
-
-        }
-    
     }
 
     public enum OnCompleteEnum {

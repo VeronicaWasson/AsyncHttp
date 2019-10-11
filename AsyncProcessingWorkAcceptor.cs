@@ -4,7 +4,6 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Extensions.Http;
-using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.WindowsAzure.Storage.Blob;
 using Microsoft.Azure.ServiceBus;
@@ -40,21 +39,8 @@ namespace Contoso
             await OutMessage.AddAsync(m);  
 
             CloudBlockBlob cbb = inputBlob.GetBlockBlobReference($"{reqid}.blobdata");
-            return (ActionResult) new AcceptedResult(rqs, $"Request Accepted for Processing{Environment.NewLine}ValetKey: {GenerateSASURIForBlob(cbb)}{Environment.NewLine}ProxyStatus: {rqs}");  
+            var sasUri = cbb.GenerateSASURI();
+            return (ActionResult) new AcceptedResult(rqs, $"Request Accepted for Processing{Environment.NewLine}ValetKey: {sasUri}{Environment.NewLine}ProxyStatus: {rqs}");  
         }
-
-        public static string GenerateSASURIForBlob(CloudBlockBlob blob)
-        {
-            SharedAccessBlobPolicy sasConstraints = new SharedAccessBlobPolicy();
-            sasConstraints.SharedAccessStartTime = DateTimeOffset.UtcNow.AddMinutes(-5);
-            sasConstraints.SharedAccessExpiryTime = DateTimeOffset.UtcNow.AddMinutes(10);
-            sasConstraints.Permissions = SharedAccessBlobPermissions.Read;
-
-            //Generate the shared access signature on the blob, setting the constraints directly on the signature.
-            string sasBlobToken = blob.GetSharedAccessSignature(sasConstraints);
-
-            //Return the URI string for the container, including the SAS token.
-            return blob.Uri + sasBlobToken;
-        }        
     }
 }
