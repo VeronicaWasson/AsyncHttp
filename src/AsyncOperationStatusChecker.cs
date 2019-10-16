@@ -29,55 +29,24 @@ namespace Contoso
             if (await inputBlob.ExistsAsync())
             {
                 // ** If it's present, depending on the value of the optional "OnComplete" parameter choose what to do. **
-                // Default (OnComplete not present or set to "Redirect") is to return a 302 redirect with the location of a SAS for the document in the location field.   
-                // If OnComplete is present and set to "Stream", the function should return the response inline.
-
-                log.LogInformation($"Blob {thisGUID}.blobdata exists, hooray!");
-
-                switch (OnComplete)
-                {
-                    case OnCompleteEnum.Redirect:
-                        {
-                            // Awesome, let's use the valet key pattern to offload the download via a SAS URI to blob storage
-                            return (ActionResult)new RedirectResult(inputBlob.GenerateSASURI());
-                        }
-
-                    case OnCompleteEnum.Stream:
-                        {
-                            // If the action is set to return the file then lets download it and return it back
-                            // ToDo: this operation is horrible for larger files, we should use a stream to minimize RAM usage.
-                            return (ActionResult)new OkObjectResult(await inputBlob.DownloadTextAsync());
-                        }
-
-                    default:
-                        {
-                            throw new InvalidOperationException("How did we get here??");
-                        }
-                }
+                return await OnCompleted(OnComplete, inputBlob, thisGUID);
             }
             else
             {
                 // ** If it's NOT present, then we need to back off, so depending on the value of the optional "OnPending" parameter choose what to do. **
-                // Default (OnPending not present or set to "Accepted") is to return a 202 accepted with the location and Retry-After Header set to 5 seconds from now.
-                // If OnPending is present and set to "Synchronous" then loop and keep retrying via an exponential backoff in the function until we time out.
-
                 string rqs = $"http://{Environment.GetEnvironmentVariable("WEBSITE_HOSTNAME")}/api/RequestStatus/{thisGUID}";
-
-                log.LogInformation($"Blob {thisGUID}.blob does not exist, still working ! result will be at {rqs}");
-
 
                 switch (OnPending)
                 {
                     case OnPendingEnum.Accepted:
                         {
-                            // This SHOULD RETURN A 202 accepted 
+                            // Return an HTTP 202 status code with the 
                             return (ActionResult)new AcceptedResult() { Location = rqs };
                         }
 
                     case OnPendingEnum.Synchronous:
                         {
-                            // This should back off and retry returning the data after a period of time timing out when the backoff period hits one minute
-
+                            // Back off and retry. Time out if the backoff period hits one minute
                             int backoff = 250;
 
                             while (!await inputBlob.ExistsAsync() && backoff < 64000)
@@ -85,48 +54,49 @@ namespace Contoso
                                 log.LogInformation($"Synchronous mode {thisGUID}.blob - retrying in {backoff} ms");
                                 backoff = backoff * 2;
                                 await Task.Delay(backoff);
-
                             }
 
                             if (await inputBlob.ExistsAsync())
                             {
-                                switch (OnComplete)
-                                {
-                                    case OnCompleteEnum.Redirect:
-                                        {
-                                            log.LogInformation($"Synchronous Redirect mode {thisGUID}.blob - completed after {backoff} ms");
-                                            // Awesome, let's use the valet key pattern to offload the download via a SAS URI to blob storage
-                                            return (ActionResult)new RedirectResult(inputBlob.GenerateSASURI());
-                                        }
-
-                                    case OnCompleteEnum.Stream:
-                                        {
-                                            log.LogInformation($"Synchronous Stream mode {thisGUID}.blob - completed after {backoff} ms");
-                                            // If the action is set to return the file then lets download it and return it back
-                                            // ToDo: this operation is horrible for larger files, we should use a stream to minimize RAM usage.
-                                            return (ActionResult)new OkObjectResult(await inputBlob.DownloadTextAsync());
-                                        }
-
-                                    default:
-                                        {
-                                            throw new InvalidOperationException("How did we get here??");
-                                        }
-                                }
+                                log.LogInformation($"Synchronous Redirect mode {thisGUID}.blob - completed after {backoff} ms");
+                                return await OnCompleted(OnComplete, inputBlob, thisGUID);
                             }
                             else
                             {
                                 log.LogInformation($"Synchronous mode {thisGUID}.blob - NOT FOUND after timeout {backoff} ms");
                                 return (ActionResult)new NotFoundResult();
-
                             }
-
                         }
 
                     default:
                         {
-                            throw new InvalidOperationException("How did we get here??");
+                            throw new InvalidOperationException($"Unexpected value: {OnPending}");
                         }
                 }
+            }
+        }
+
+        private static async Task<IActionResult> OnCompleted(OnCompleteEnum OnComplete, CloudBlockBlob inputBlob, string thisGUID)
+        {
+            switch (OnComplete)
+            {
+                case OnCompleteEnum.Redirect:
+                    {
+                        // Redirect to the SAS URI to blob storage
+                        return (ActionResult)new RedirectResult(inputBlob.GenerateSASURI());
+                    }
+
+                case OnCompleteEnum.Stream:
+                    {
+                        // Download the file and return it directly to the caller.
+                        // For larger files, use a stream to minimize RAM usage.
+                        return (ActionResult)new OkObjectResult(await inputBlob.DownloadTextAsync());
+                    }
+
+                default:
+                    {
+                        throw new InvalidOperationException($"Unexpected value: {OnComplete}");
+                    }
             }
         }
     }
@@ -135,14 +105,11 @@ namespace Contoso
 
         Redirect,
         Stream
-
     }
 
     public enum OnPendingEnum {
 
         Accepted,
         Synchronous
-
     }
-
 }
